@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <!-- 优化移动端显示 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Project Master V14 (云部署版)</title>
+    
+    <!-- 引入资源 (使用可靠的 CDN) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        :root { --primary-color: #0d6efd; --bg-color: #f0f2f5; }
+        body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background-color: var(--bg-color); padding-bottom: 60px; }
+        
+        #loading-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #fff; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .loader { border: 5px solid #f3f3f3; border-top: 5px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        [v-cloak] { display: none !important; }
+
+        .app-container { max-width: 1400px; margin: 20px auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .collab-bar { background: #e7f1ff; border: 1px solid #b6d4fe; color: #084298; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+        
+        /* 视图组件样式 */
+        .gantt-wrapper { border: 1px solid #dee2e6; border-radius: 6px; background: #fff; display: flex; overflow: hidden; height: 600px; }
+        .gantt-sidebar { width: 300px; border-right: 1px solid #dee2e6; overflow-y: hidden; background: #f8f9fa; flex-shrink: 0; }
+        .gantt-main { flex-grow: 1; overflow: auto; position: relative; }
+        .gantt-header { height: 45px; border-bottom: 1px solid #dee2e6; background: #f8f9fa; display: flex; align-items: center; position: sticky; top: 0; z-index: 10; }
+        .gantt-row { height: 40px; border-bottom: 1px solid #f1f1f1; display: flex; align-items: center; position: relative; }
+        .gantt-row:hover { background-color: #fcfcfc; }
+        .gantt-bar { position: absolute; height: 24px; top: 8px; border-radius: 4px; font-size: 12px; color: #fff; padding: 0 8px; line-height: 24px; cursor: pointer; white-space: nowrap; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; }
+        .gantt-progress-overlay { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(0,0,0,0.2); pointer-events: none; }
+
+        .tree-indent { display: inline-block; width: 20px; text-align: center; cursor: pointer; color: #999; }
+        .matrix-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 40px 1fr 1fr; gap: 15px; height: 650px; }
+        .quadrant { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; overflow-y: auto; background: #fafafa; }
+        .q1 { border-top: 4px solid #dc3545; } .q2 { border-top: 4px solid #0d6efd; }
+        .q3 { border-top: 4px solid #ffc107; } .q4 { border-top: 4px solid #6c757d; }
+        .task-card { background: white; padding: 10px; border: 1px solid #eee; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: transform 0.2s; }
+        .task-card:hover { transform: translateY(-2px); box-shadow: 0 3px 6px rgba(0,0,0,0.1); }
+        .modal-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+        .modal-panel { background: white; padding: 25px; border-radius: 12px; width: 600px; max-width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .log-box { font-size: 12px; color: #666; background: #f9f9f9; border: 1px solid #eee; height: 100px; overflow-y: auto; padding: 5px; margin-top: 10px; }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .btn-group-responsive { display: flex; flex-wrap: wrap; gap: 5px; }
+            .btn-group-responsive .btn { flex: 1; font-size: 12px; }
+            .gantt-sidebar { width: 120px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading-mask">
+    <div class="loader"></div>
+    <h4>正在连接服务器...</h4>
+</div>
+
+<div id="app" v-cloak>
+    <div class="app-container">
+        <!-- 顶部工具栏 -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom">
+            <h4 class="m-0 text-primary"><i class="fas fa-cloud me-2"></i>PM V14 <small class="text-muted fs-6">部署版</small></h4>
+            <div class="btn-group-responsive">
+                <button class="btn btn-outline-info" @click="openCollab" :disabled="isConnected">
+                    <i class="fas fa-wifi"></i> {{ isConnected ? '协同中' : '开启协同' }}
+                </button>
+                <button class="btn btn-primary" @click="saveData"><i class="fas fa-save"></i> 保存</button>
+                <button class="btn btn-success" @click="exportJSON"><i class="fas fa-file-export"></i> 导出</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('fileInput').click()"><i class="fas fa-file-import"></i> 导入</button>
+                <button class="btn btn-warning text-white" @click="exportPPT"><i class="fas fa-film"></i> PPT</button>
+                <input type="file" id="fileInput" hidden @change="importJSON" accept=".json">
+            </div>
+        </div>
+
+        <!-- 协同状态 -->
+        <div v-if="isConnected" class="collab-bar">
+            <div>
+                <span class="badge bg-primary me-2">{{ isHost ? '房主' : '访客' }}</span>
+                <strong>房间ID: <span class="user-select-all bg-white px-2 rounded">{{ roomId }}</span></strong>
+                <span class="ms-3 text-muted" v-if="isHost">{{ connections.length }} 人在线</span>
+            </div>
+            <div>
+                <span v-if="isSyncing" class="text-warning me-3"><i class="fas fa-sync fa-spin"></i> 同步中...</span>
+                <button class="btn btn-sm btn-danger" @click="disconnect">断开</button>
+            </div>
+        </div>
+
+        <!-- 视图切换 -->
+        <div class="d-flex justify-content-center mb-4">
+            <div class="btn-group">
+                <button class="btn btn-lg" :class="view==='list'?'btn-primary':'btn-outline-primary'" @click="view='list'">列表</button>
+                <button class="btn btn-lg" :class="view==='matrix'?'btn-primary':'btn-outline-primary'" @click="view='matrix'">四象限</button>
+                <button class="btn btn-lg" :class="view==='gantt'?'btn-primary':'btn-outline-primary'" @click="view='gantt'">甘特图</button>
+            </div>
+        </div>
+
+        <!-- 视图内容区 -->
+        <div id="capture-area" class="bg-white p-2">
+            <!-- 列表视图 -->
+            <div v-if="view==='list'">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:30%">事项 (层级)</th>
+                                <th style="width:10%">负责人</th>
+                                <th style="width:12%">时间</th>
+                                <th style="width:15%">进度描述</th>
+                                <th style="width:8%">%</th>
+                                <th style="width:5%">重</th>
+                                <th style="width:5%">急</th>
+                                <th style="width:15%">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="table-active">
+                                <td><input class="form-control form-control-sm" v-model="newItem.title" placeholder="输入根事项..."></td>
+                                <td><input class="form-control form-control-sm" v-model="newItem.owner"></td>
+                                <td><input type="date" class="form-control form-control-sm" v-model="newItem.start"></td>
+                                <td><input class="form-control form-control-sm" v-model="newItem.progressDesc" placeholder="当前状况"></td>
+                                <td>0%</td>
+                                <td colspan="2"></td>
+                                <td><button class="btn btn-sm btn-primary w-100" @click="addItem(null)">添加</button></td>
+                            </tr>
+                            <tr v-for="t in flatTasks" :key="t.id">
+                                <td :style="{paddingLeft: (t.level*20+10)+'px'}">
+                                    <i v-if="t.hasChildren" class="fas tree-indent me-1" :class="t.expanded?'fa-caret-down':'fa-caret-right'" @click="toggleExpand(t)"></i>
+                                    <span v-else class="tree-indent me-1"></span>
+                                    <input type="checkbox" class="form-check-input me-2" v-model="t.completed">
+                                    <input class="form-control form-control-sm d-inline-block border-0 bg-transparent" style="width:60%; font-weight:500" v-model="t.title" :class="{'text-decoration-line-through text-muted': t.completed}">
+                                </td>
+                                <td><input class="form-control form-control-sm border-0" v-model="t.owner"></td>
+                                <td>
+                                    <input type="date" class="form-control form-control-sm border-0" v-model="t.start">
+                                    <div class="small text-muted ps-2">{{t.days}}天</div>
+                                </td>
+                                <td><input class="form-control form-control-sm border-0" v-model="t.progressDesc"></td>
+                                <td>
+                                    <input type="range" class="form-range" v-model.number="t.progress" min="0" max="100" step="5">
+                                    <div class="small text-center">{{t.progress}}%</div>
+                                </td>
+                                <td><i class="fas" :class="t.isImportant?'fa-star text-warning':'fa-star text-secondary'" @click="toggleBool(t,'isImportant')"></i></td>
+                                <td><i class="fas" :class="t.isUrgent?'fa-fire text-danger':'fa-fire text-secondary'" @click="toggleBool(t,'isUrgent')"></i></td>
+                                <td>
+                                    <button class="btn btn-sm btn-link p-0 me-2" @click="editItem(t)"><i class="fas fa-edit"></i></button>
+                                    <button class="btn btn-sm btn-link p-0 me-2 text-success" @click="addItem(t)" :disabled="t.level>=4"><i class="fas fa-plus-circle"></i></button>
+                                    <button class="btn btn-sm btn-link p-0 text-danger" @click="delItem(t.id)"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 四象限 -->
+            <div v-if="view==='matrix'">
+                <div class="matrix-grid">
+                    <div style="grid-column:1" class="text-center fw-bold text-danger bg-light rounded py-2">紧急</div>
+                    <div style="grid-column:2" class="text-center fw-bold text-primary bg-light rounded py-2">不紧急</div>
+                    
+                    <div class="quadrant q1">
+                        <div v-for="t in getLeafs(true, true)" class="task-card" @click="editItem(t)">
+                            <div class="fw-bold">{{t.title}}</div>
+                            <div class="d-flex justify-content-between small text-muted mt-1"><span>{{t.owner}}</span> <span>{{t.progress}}%</span></div>
+                            <div class="progress mt-1" style="height:4px"><div class="progress-bar bg-danger" :style="{width:t.progress+'%'}"></div></div>
+                        </div>
+                    </div>
+                    <div class="quadrant q2">
+                        <div v-for="t in getLeafs(true, false)" class="task-card" @click="editItem(t)">
+                            <div class="fw-bold">{{t.title}}</div>
+                            <div class="d-flex justify-content-between small text-muted mt-1"><span>{{t.owner}}</span> <span>{{t.progress}}%</span></div>
+                            <div class="progress mt-1" style="height:4px"><div class="progress-bar bg-primary" :style="{width:t.progress+'%'}"></div></div>
+                        </div>
+                    </div>
+                    <div class="quadrant q3">
+                        <div v-for="t in getLeafs(false, true)" class="task-card" @click="editItem(t)">
+                            <div>{{t.title}}</div>
+                            <div class="progress mt-1" style="height:4px"><div class="progress-bar bg-warning" :style="{width:t.progress+'%'}"></div></div>
+                        </div>
+                    </div>
+                    <div class="quadrant q4">
+                        <div v-for="t in getLeafs(false, false)" class="task-card" @click="editItem(t)">
+                            <div>{{t.title}}</div>
+                            <div class="progress mt-1" style="height:4px"><div class="progress-bar bg-secondary" :style="{width:t.progress+'%'}"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 甘特图 -->
+            <div v-if="view==='gantt'">
+                <div class="mb-2">
+                    <select class="form-select form-select-sm w-auto d-inline-block" v-model="ganttScale">
+                        <option value="day">日视图</option><option value="week">周视图</option><option value="month">月视图</option>
+                    </select>
+                </div>
+                <div class="gantt-wrapper">
+                    <div class="gantt-sidebar">
+                        <div class="gantt-header ps-2 fw-bold">任务名称</div>
+                        <div v-for="t in flatTasks" class="gantt-row ps-2">
+                            <div style="padding-left:{{t.level*15}}px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" :title="t.title">
+                                <i v-if="t.hasChildren" class="fas small me-1" :class="t.expanded?'fa-caret-down':'fa-caret-right'" @click="toggleExpand(t)"></i> {{t.title}}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="gantt-main">
+                        <div class="gantt-header" :style="{width: ganttWidth+'px'}">
+                            <div v-for="c in ganttCols" class="d-flex align-items-center justify-content-center border-end" :style="{width: colW+'px', flexShrink:0, background: c.isToday?'#e8f0fe':''}">
+                                <small>{{c.label}}</small>
+                            </div>
+                        </div>
+                        <div v-for="t in flatTasks" class="gantt-row" :style="{width: ganttWidth+'px'}">
+                            <div v-for="c in ganttCols" class="border-end h-100" :style="{width: colW+'px', flexShrink:0}"></div>
+                            <div class="gantt-bar" :style="getBarStyle(t)" @click="editItem(t)" :title="t.progressDesc">
+                                <div class="gantt-progress-overlay" :style="{width: t.progress+'%'}"></div>
+                                <span style="position:relative; z-index:2">{{t.title}}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 协同弹窗 -->
+    <div v-if="showCollab" class="modal-mask" @click.self="showCollab=false">
+        <div class="modal-panel">
+            <h4><i class="fas fa-network-wired"></i> 多人协同 (云端版)</h4>
+            <ul class="nav nav-tabs mb-3">
+                <li class="nav-item"><a class="nav-link" :class="{active:mode==='host'}" href="#" @click="mode='host'">我是房主</a></li>
+                <li class="nav-item"><a class="nav-link" :class="{active:mode==='guest'}" href="#" @click="mode='guest'">我是访客</a></li>
+            </ul>
+            <div v-if="mode==='host'">
+                <div class="mb-3"><label>设置房间ID (建议复杂点):</label><input class="form-control" v-model="inputId" placeholder="例: company_meet_01"></div>
+                <button class="btn btn-primary w-100" @click="startHost" :disabled="loading">
+                    <span v-if="loading" class="spinner-border spinner-border-sm"></span> 创建房间
+                </button>
+            </div>
+            <div v-if="mode==='guest'">
+                <div class="mb-3"><label>输入房主ID:</label><input class="form-control" v-model="inputId" placeholder="例: company_meet_01"></div>
+                <button class="btn btn-success w-100" @click="joinGame" :disabled="loading">
+                    <span v-if="loading" class="spinner-border spinner-border-sm"></span> 加入房间
+                </button>
+            </div>
+            <div class="log-box" v-if="logs.length"><div v-for="(log, i) in logs" :key="i">> {{ log }}</div></div>
+            <button class="btn btn-link w-100 mt-2" @click="showCollab=false">关闭</button>
+        </div>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <div v-if="editing" class="modal-mask" @click.self="editing=null">
+        <div class="modal-panel">
+            <h5>编辑详情</h5>
+            <input class="form-control mb-2" v-model="editing.title" placeholder="标题">
+            <div class="row mb-2">
+                <div class="col"><input class="form-control" v-model="editing.owner" placeholder="负责人"></div>
+                <div class="col"><input type="date" class="form-control" v-model="editing.start"></div>
+            </div>
+            <textarea class="form-control mb-2" rows="2" v-model="editing.progressDesc" placeholder="进度描述"></textarea>
+            <div class="mb-3"><label>完成度: {{editing.progress}}%</label><input type="range" class="form-range" v-model.number="editing.progress"></div>
+            <div class="row mb-3"><div class="col"><label>计划天数</label><input type="number" class="form-control" v-model.number="editing.days"></div></div>
+            <div class="text-end"><button class="btn btn-primary" @click="editing=null">确定</button></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.2.47/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+
+<script>
+    const { createApp, nextTick } = Vue;
+    // 使用混合 STUN
+    const PEER_CONFIG = { config: { 'iceServers': [{ url: 'stun:stun.l.google.com:19302' }, { url: 'stun:stun.qq.com:3478' }] }, debug: 1 };
+
+    createApp({
+        data() { return {
+            view: 'list', tasks: [], newItem: this.emptyItem(), editing: null, ganttScale: 'day',
+            showCollab: false, mode: 'host', inputId: '', loading: false, isConnected: false, isHost: false, roomId: '', logs: [],
+            peer: null, connections: [], hostConn: null, isSyncing: false, lastSync: 0, remoteUpdating: false
+        }},
+        mounted() {
+            document.getElementById('loading-mask').style.display = 'none';
+            try { const s = localStorage.getItem('pm_v14_data'); if(s) this.tasks = JSON.parse(s); } catch(e){}
+            this.$watch('tasks', () => {
+                if (this.remoteUpdating) return; 
+                try { localStorage.setItem('pm_v14_data', JSON.stringify(this.tasks)); } catch(e){}
+                this.throttledSync();
+            }, { deep: true });
+        },
+        computed: {
+            flatTasks() { const res=[]; const walk=(l,lvl)=>{ l.forEach(t=>{ if(t.expanded===undefined)t.expanded=true; res.push({...t,level:lvl,hasChildren:t.children?.length>0}); if(t.children?.length&&t.expanded)walk(t.children,lvl+1); }); }; walk(this.tasks,0); return res; },
+            colW() { return this.ganttScale==='day'?40:(this.ganttScale==='week'?60:80); },
+            ganttCols() { const cols=[]; let d=new Date(); d.setDate(d.getDate()-5); for(let i=0;i<60;i++){ let l=`${d.getMonth()+1}/${d.getDate()}`; if(this.ganttScale==='month')l=`${d.getMonth()+1}月`; cols.push({date:new Date(d),label:l,isToday:d.toDateString()===new Date().toDateString()}); d.setDate(d.getDate()+(this.ganttScale==='week'?7:(this.ganttScale==='month'?30:1))); } return cols; },
+            ganttWidth() { return this.ganttCols.length*this.colW; }, ganttStart() { return this.ganttCols[0].date; }
+        },
+        methods: {
+            log(msg) { this.logs.push(`[${new Date().toLocaleTimeString()}] ${msg}`); },
+            emptyItem() { return { id: Date.now(), title:'', owner:'', start: new Date().toISOString().split('T')[0], days:1, progress:0, progressDesc:'', completed:false, isImportant:false, isUrgent:false, children:[], expanded:true }; },
+            addItem(p) { const i={...this.emptyItem(), id:Date.now()+Math.random().toString(36).substr(2)}; if(p){if(!p.children)p.children=[];p.children.push(i);p.expanded=true;}else{if(!this.newItem.title)return alert("请输入标题");Object.assign(i,this.newItem);this.tasks.push(i);this.newItem=this.emptyItem();} },
+            delItem(id) { if(!confirm("确认删除？"))return; const del=(l)=>{const i=l.findIndex(x=>x.id===id);if(i>-1){l.splice(i,1);return true;}for(const t of l)if(t.children&&del(t.children))return true;}; del(this.tasks); },
+            editItem(t) { this.editing=this.findItem(this.tasks,t.id); }, findItem(l,id) { for(const t of l){if(t.id===id)return t;if(t.children){const f=this.findItem(t.children,id);if(f)return f;}} },
+            toggleExpand(t) { const x=this.findItem(this.tasks,t.id);if(x)x.expanded=!x.expanded; }, toggleBool(t,k) { const x=this.findItem(this.tasks,t.id);if(x)x[k]=!x[k]; },
+            getLeafs(imp,urg) { const r=[]; const w=(l)=>l.forEach(t=>{if((!t.children?.length)&&!t.completed&&t.isImportant===imp&&t.isUrgent===urg)r.push(t);if(t.children)w(t.children);}); w(this.tasks); return r; },
+            getBarStyle(t) { let d=(new Date(t.start)-this.ganttStart)/86400000; let f=1; if(this.ganttScale==='week'){d/=7;f=1/7;} if(this.ganttScale==='month'){d/=30;f=1/30;} let l=d*this.colW; let w=t.days*f*this.colW; let bg='#6c757d'; if(t.isImportant)bg='#0d6efd'; if(t.isUrgent)bg='#ffc107'; if(t.isImportant&&t.isUrgent)bg='#dc3545'; return {left:l+'px',width:Math.max(w,10)+'px',backgroundColor:bg}; },
+            
+            // 协同逻辑
+            openCollab() { this.showCollab=true; this.logs=[]; },
+            initPeer(id) { return new Peer(id, PEER_CONFIG); },
+            startHost() {
+                if(!this.inputId) return alert("请输入房间ID");
+                this.loading=true; this.logs=["初始化房主..."];
+                try {
+                    this.peer = this.initPeer(this.inputId);
+                    this.peer.on('open', (id)=>{ this.roomId=id;this.isHost=true;this.isConnected=true;this.loading=false;this.showCollab=false; });
+                    this.peer.on('error', (e)=>{ this.loading=false;this.log("错误: "+e.type); });
+                    this.peer.on('connection', (c)=>{
+                        this.connections.push(c);
+                        c.on('open', ()=>{ c.send({type:'WELCOME', data:this.tasks}); });
+                        c.on('data', (d)=>this.handleData(d,c));
+                        c.on('close', ()=>this.connections=this.connections.filter(x=>x!==c));
+                    });
+                } catch(e) { this.log(e.message); this.loading=false; }
+            },
+            joinGame() {
+                if(!this.inputId) return alert("请输入ID");
+                this.loading=true; this.logs=["连接中..."];
+                try {
+                    this.peer = this.initPeer();
+                    this.peer.on('open', ()=>{
+                        const c = this.peer.connect(this.inputId);
+                        const tm = setTimeout(()=>{ if(this.loading){this.loading=false;this.log("连接超时");} }, 15000);
+                        c.on('open', ()=>{ c.send({type:'HELLO'}); });
+                        c.on('data', (d)=>{
+                            if(d.type==='WELCOME'){ clearTimeout(tm); this.hostConn=c; this.roomId=this.inputId; this.isHost=false; this.isConnected=true; this.loading=false; this.showCollab=false; this.handleData(d); alert("连接成功"); }
+                            else this.handleData(d);
+                        });
+                        c.on('close', ()=>{ alert("断开"); this.disconnect(); });
+                    });
+                } catch(e){ this.log(e.message); this.loading=false; }
+            },
+            handleData(msg, sender) {
+                if(msg.type==='SYNC' || msg.type==='WELCOME') {
+                    this.remoteUpdating=true; this.tasks=msg.data;
+                    nextTick(()=>{ this.remoteUpdating=false; if(this.isHost&&sender) this.connections.forEach(c=>{if(c!==sender&&c.open)c.send(msg)}); });
+                }
+                if(msg.type==='HELLO'&&this.isHost&&sender) sender.send({type:'WELCOME',data:this.tasks});
+            },
+            throttledSync() { if(!this.isConnected)return; const now=Date.now(); if(now-this.lastSync>800){this.sendData();this.lastSync=now;}else{clearTimeout(this.syncTimer);this.syncTimer=setTimeout(()=>this.sendData(),800);} },
+            sendData() { this.isSyncing=true; const p={type:'SYNC',data:JSON.parse(JSON.stringify(this.tasks))}; if(this.isHost)this.connections.forEach(c=>c.open&&c.send(p)); else if(this.hostConn?.open)this.hostConn.send(p); setTimeout(()=>this.isSyncing=false,500); },
+            disconnect() { if(this.peer)this.peer.destroy(); this.isConnected=false; this.isHost=false; this.connections=[]; this.hostConn=null; },
+            saveData() { this.saveLocal(); alert("已保存"); }, saveLocal() { localStorage.setItem('pm_v14_data', JSON.stringify(this.tasks)); },
+            exportJSON() { const b=new Blob([JSON.stringify(this.tasks)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='project.json'; a.click(); },
+            importJSON(e) { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(v)=>{ try{this.tasks=JSON.parse(v.target.result);alert("导入成功");}catch(e){alert("错误");} }; r.readAsText(f); },
+            exportPPT() { html2canvas(document.getElementById('capture-area')).then(c=>{ const p=new PptxGenJS(); const s=p.addSlide(); s.addImage({data:c.toDataURL(),x:0.5,y:0.5,w:9,h:5}); p.writeFile({fileName:'Project.pptx'}); }); }
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
